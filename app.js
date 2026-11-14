@@ -1,4 +1,4 @@
-// ================= 配置区 (已为你填好截图中的真实数据) =================
+// ================= 配置区 =================
 const SUPABASE_URL = 'https://djihtebfuaqjenkrmvfih.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_Sw6M_fWtUUOiIy_YisLw8g_IwlHyFxW';
 const HCAPTCHA_SITE_KEY = '3bd4ddae-d49c-4ade-a5e6-ab2471c6a6d8';
