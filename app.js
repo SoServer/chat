@@ -1,8 +1,8 @@
-// ================= 配置区 =================
+// ================= 配置区 (已为你填好截图中的真实数据) =================
 const SUPABASE_URL = 'https://djihtebfuaqjenkrmvfih.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_Sw6M_fWtUUOiIy_YisLw8g_IwlHyFxW';
 const HCAPTCHA_SITE_KEY = '3bd4ddae-d49c-4ade-a5e6-ab2471c6a6d8';
-// ==========================================
+// ======================================================================
 
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -18,8 +18,8 @@ let channel = null;
 let isSending = false;
 const renderedIds = new Set();
 
-// 1. 页面加载与 hCaptcha 初始化
-window.onload = () => {
+// 1. hCaptcha 加载完毕后的回调（解决 should not render before js api is fully loaded 警告）
+window.onHcaptchaLoad = function() {
   if (window.hcaptcha) {
     hcaptcha.render('hcaptcha-container', {
       sitekey: HCAPTCHA_SITE_KEY,
@@ -27,6 +27,7 @@ window.onload = () => {
       callback: (token) => doAnonymousLogin(token),
       'error-callback': () => showToast('人机验证失败，请刷新重试', 'error')
     });
+    // 渲染成功后，再去检查身份
     initAuth();
   } else {
     $('loading-text').textContent = '验证组件加载失败，请检查网络';
@@ -45,6 +46,7 @@ async function initAuth() {
   }
 }
 
+// 3. 匿名登录
 async function doAnonymousLogin(captchaToken) {
   $('loading-text').textContent = '验证通过，正在连接...';
   const { data, error } = await db.auth.signInAnonymously({
@@ -61,8 +63,10 @@ async function doAnonymousLogin(captchaToken) {
   onLoginSuccess();
 }
 
-// 3. 登录成功后的初始化
+// 4. 登录成功后的初始化
 function onLoginSuccess() {
+  // 修复 aria-hidden 焦点警告：在隐藏遮罩前移开焦点
+  if (inputEl) inputEl.focus();
   $('loading-overlay').style.display = 'none';
   
   // 获取用户角色（从 JWT app_metadata 中读取）
@@ -70,10 +74,8 @@ function onLoginSuccess() {
   userRole = meta.role || 'anonymous';
   const quotaTier = meta.quota_tier || 'basic';
   
-  // 更新 UI 头像与角色
   updateUserUI(userRole, quotaTier);
   
-  // 检查昵称
   const savedName = localStorage.getItem('chat_nickname');
   if (savedName) {
     inputEl.disabled = false;
@@ -87,7 +89,7 @@ function onLoginSuccess() {
   subscribeRealtime();
 }
 
-// 4. UI 更新
+// 5. UI 更新
 function updateUserUI(role, quota) {
   const roleNames = {
     'anonymous': '匿名访客',
@@ -122,7 +124,7 @@ function promptNickname() {
   }
 }
 
-// 5. 消息渲染
+// 6. 消息渲染
 function appendMessage(msg) {
   if (!msg || !msg.id || renderedIds.has(msg.id)) return;
   renderedIds.add(msg.id);
@@ -133,7 +135,6 @@ function appendMessage(msg) {
   const row = document.createElement('div');
   row.className = `msg-row ${isSelf ? 'self' : 'other'}`;
   
-  // 解析特殊内容（图片/文件）
   let contentHtml = '';
   if (msg.content.startsWith('[IMG]') && msg.content.endsWith('[/IMG]')) {
     const url = msg.content.replace('[IMG]', '').replace('[/IMG]', '');
@@ -144,14 +145,8 @@ function appendMessage(msg) {
     const url = parts[1];
     contentHtml = `<a href="${url}" target="_blank" rel="noopener">📎 下载文件：${fileName}</a>`;
   } else {
-    // 纯文本，防止 XSS
     contentHtml = escapeHTML(msg.content);
   }
-
-  // 生成角色标签
-  let roleTag = '';
-  // 注意：普通用户查不到别人的角色，这里只有通过数据库联查才能实现，但目前数据库没存角色
-  // 这里采用简单逻辑：如果发消息的人名字存在 localStorage 且自己不是普通用户，或者管理员发消息带标记（假设）
 
   row.innerHTML = `
     <div class="avatar" style="background: ${isSelf ? '#2d6cdf' : '#8b93a1'}">${(msg.username||'匿').charAt(0).toUpperCase()}</div>
@@ -174,7 +169,7 @@ function escapeHTML(str) {
   }[tag]));
 }
 
-// 6. 数据交互
+// 7. 数据交互
 async function loadHistory() {
   const { data, error } = await db.from('messages').select('*').eq('room', 'general').order('created_at', { ascending: true }).limit(100);
   if (!error && data) data.forEach(appendMessage);
@@ -192,7 +187,7 @@ function subscribeRealtime() {
     });
 }
 
-// 7. 发送消息（带后端拦截联动）
+// 8. 发送消息
 async function sendMessage() {
   const content = inputEl.value.trim();
   const username = localStorage.getItem('chat_nickname');
@@ -202,12 +197,10 @@ async function sendMessage() {
   sendBtn.disabled = true;
   inputEl.value = '';
   
-  // 插入数据库
   const { error } = await db.from('messages').insert({ username, content, room: 'general' });
   
   if (error) {
-    inputEl.value = content; // 恢复内容
-    // 联动后端禁言触发器报错
+    inputEl.value = content;
     if (error.message.includes('你当前已被禁言')) {
       showToast('你已被禁言，无法发送消息', 'error');
     } else {
@@ -215,7 +208,6 @@ async function sendMessage() {
     }
   }
   
-  // 前端强制冷却（配合后端 2 秒防刷）
   setTimeout(() => {
     isSending = false;
     sendBtn.disabled = false;
@@ -223,19 +215,17 @@ async function sendMessage() {
   }, 1500);
 }
 
-// 8. 文件与图片上传（配额与格式严格校验）
+// 9. 文件与图片上传
 async function handleFileUpload(file, type) {
   if (!file) return;
   const username = localStorage.getItem('chat_nickname');
   const isStaff = ['admin', 'executive', 'specialist'].includes(userRole);
   
   if (type === 'image') {
-    // 前端预校验：大小 10MB，格式
     if (!file.type.startsWith('image/')) return showToast('只能上传图片格式', 'error');
     if (file.size > 10 * 1024 * 1024) return showToast('图片不能超过 10MB', 'error');
   } else {
-    // 前端预校验：大小 50MB，禁止图片
-    if (file.type.startsWith('image/')) return showToast('文件桶不允许上传图片，请使用图片按钮', 'error');
+    if (file.type.startsWith('image/')) return showToast('文件桶不允许上传图片', 'error');
     if (file.size > 50 * 1024 * 1024) return showToast('文件不能超过 50MB', 'error');
   }
 
@@ -248,22 +238,19 @@ async function handleFileUpload(file, type) {
   const { data, error } = await db.storage.from(bucket).upload(filePath, file);
   
   if (error) {
-    // 联动后端 RLS 配额拦截报错
     if (error.message.includes('row-level security')) {
-      showToast(isStaff ? '上传失败' : '今日上传配额已用尽 (100MB/200MB)', 'error');
+      showToast(isStaff ? '上传失败' : '今日上传配额已用尽', 'error');
     } else {
       showToast('上传失败：' + error.message, 'error');
     }
     return;
   }
   
-  // 上传成功，生成消息内容
   let msgContent = '';
   if (type === 'image') {
     const { data: urlData } = db.storage.from(bucket).getPublicUrl(filePath);
     msgContent = `[IMG]${urlData.publicUrl}[/IMG]`;
   } else {
-    // 文件是私有桶，生成 24 小时有效链接（或者通过 RLS 直接下载）
     const { data: signedData } = await db.storage.from(bucket).createSignedUrl(filePath, 86400);
     msgContent = `[FILE]${file.name}|${signedData.signedUrl}[/FILE]`;
   }
@@ -272,7 +259,7 @@ async function handleFileUpload(file, type) {
   showToast('发送成功', 'success');
 }
 
-// 9. 事件绑定
+// 10. 事件绑定
 sendBtn.addEventListener('click', sendMessage);
 inputEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -281,13 +268,13 @@ inputEl.addEventListener('keydown', (e) => {
 $('btn-upload-image').addEventListener('click', () => $('file-image').click());
 $('file-image').addEventListener('change', (e) => {
   if (e.target.files.length) handleFileUpload(e.target.files[0], 'image');
-  e.target.value = ''; // 重置
+  e.target.value = '';
 });
 
 $('btn-upload-file').addEventListener('click', () => $('file-doc').click());
 $('file-doc').addEventListener('change', (e) => {
   if (e.target.files.length) handleFileUpload(e.target.files[0], 'file');
-  e.target.value = ''; // 重置
+  e.target.value = '';
 });
 
 // Toast 提示工具
